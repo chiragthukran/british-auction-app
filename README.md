@@ -10,17 +10,49 @@ The system operates across a dual-tier Fullstack architecture anchored by a bidi
 
 ```mermaid
 graph TD;
-    Client((Web Client \n React & Vite)):::frontend
-    Gateway{Node.js + Express API}:::backend
-    SocketServer((Socket.io Stream)):::realtime
-    DB[(MongoDB Atlas)]:::database
+    subgraph "Users & Access"
+        Buyer([Buyer \n Procures Freight]):::user
+        Supplier([Supplier \n Bids on Freight]):::user
+    end
 
-    Client -- REST HTTP (CRUD) --> Gateway
-    Client -- WebSocket (WSS) <--> SocketServer
+    subgraph "Frontend Edge (Vercel)"
+        ViteApp((React SPA \n Vite Build)):::frontend
+        ViteRouter[React Router \n SPA Fallback]:::frontend
+    end
+
+    subgraph "Backend Compute (Node.js Server)"
+        API_Gateway{Express API \n Entry Point}:::backend
+        AuthMiddleware(JWT Guard \n Role-Based Auth):::backend
+        REST_Controllers>CRUD Operations \n Bids/RFQs/Users]:::backend
+        CalcEngine[[Ranking & \n Time Ext. Math]]:::backend
+        SocketServer((Socket.io \n Real-Time Engine)):::realtime
+    end
+
+    subgraph "Persistence Layer (MongoDB Atlas)"
+        DB[(Cloud MongoDB)]:::database
+        Models[Mongoose Schemas \n Strict Validation]:::database
+    end
+
+    Buyer -- HTTP / WSS --> ViteApp
+    Supplier -- HTTP / WSS --> ViteApp
+
+    ViteApp -- "Client Routing" --> ViteRouter
+
+    ViteApp -- "REST HTTP (JSON)" --> API_Gateway
+    ViteApp -- "WebSocket (WSS)" <--> SocketServer
+
+    API_Gateway -- "Headers Validate" --> AuthMiddleware
+    AuthMiddleware -- "Authorized" --> REST_Controllers
+    REST_Controllers -- "Triggers computation" --> CalcEngine
     
-    Gateway -- Mongoose ORM --> DB
-    Gateway -- Event Triggers --> SocketServer
+    REST_Controllers -- "Mongoose ORM" --> Models
+    CalcEngine -- "Mongoose ORM" --> Models
+    Models -- "Read/Write" --> DB
     
+    CalcEngine -- "System Events \n (Rankings/Time Updates)" --> SocketServer
+    REST_Controllers -- "Data Events \n (New Bids/RFQs)" --> SocketServer
+
+    classDef user fill:#64748b,color:#fff,stroke-width:2px;
     classDef frontend fill:#3b82f6,color:#fff,stroke-width:2px;
     classDef backend fill:#10b981,color:#fff,stroke-width:2px;
     classDef realtime fill:#f59e0b,color:#fff,stroke-width:2px;
