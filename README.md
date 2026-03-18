@@ -6,6 +6,8 @@ A high-performance real-time Request For Quotation (RFQ) and dynamic auctioning 
 
 The system operates across a dual-tier Fullstack architecture anchored by a bidirectional WebSocket communication layer for millisecond-level synchronization.
 
+### System Architecture Diagram
+
 ```mermaid
 graph TD;
     Client((Web Client \n React & Vite)):::frontend
@@ -27,55 +29,121 @@ graph TD;
 
 ### Core Architecture Subsystems
 1. **Frontend**: Vite-compiled React Application executing dynamic component renders. Styled with curated Vanilla CSS and smooth `framer-motion` layout animations. Modals natively handle user warnings, backed by `react-toastify` for absolute non-blocking WebSocket visual popups.
-2. **Backend**: Express container governing absolute schema logic, JWT validation, and heavy mathematical time-extension polling. Secure API Endpoints intercept legacy structural updates through strict `protect` middleware logic.
+2. **Backend**: Express container governing absolute schema logic, JWT validation, and heavy mathematical time-extension polling. Secure API Endpoints intercept structural updates through strict `protect` middleware logic.
 3. **Database Layer**: MongoDB cluster utilizing strict Mongoose typing, schema validation, and populated object references.
-4. **Real-time Pipeline**: Event-driven Socket.io state machine perfectly orchestrating live updates across decoupled React interfaces, mitigating standard polling drag.
+4. **Real-time Pipeline**: Event-driven Socket.io state machine perfectly orchestrating live updates across decoupled React interfaces, mitigating standard HTTP polling drag.
 
 ---
 
-## 🗄️ Database Schema Design
+## 🗄️ Database Schema Design (ER Diagram)
 
 The entire platform pivots on normalized strict relations utilizing `ObjectId` arrays for highly scalable relationships.
 
-### `User` Collection (Authentication)
-Governs both active market roles interacting with the auctions.
-- `name` (String, required)
-- `email` (String, unique, required)
-- `password` (String, bcrypt hashed)
-- `role` (Enum strictly limited to `['BUYER', 'SUPPLIER']`)
-- `createdAt` / `updatedAt` (Timestamps)
+```mermaid
+erDiagram
+    USER ||--o{ RFQ : "creates (Buyer)"
+    USER ||--o{ BID : "places (Supplier)"
+    RFQ ||--o{ BID : "receives"
+    RFQ ||--o{ ACTIVITY_LOG : "generates"
+    RFQ ||--o| BID : "awards"
 
-### `Rfq` Collection (Auctions)
-The central nervous system of the shipment parameters.
-- `rfqId` (String, unique generator label)
-- `name` (String, auction title)
-- `status` (Enum: `['Active', 'Closed', 'Force Closed']`)
-- `buyerId` (ObjectId ref User, Procurement owner)
-- `awardedBidId` (ObjectId ref Bid, Nullable until conclusion)
-- `currentBidCloseDate` (Date, dynamic shifting timer)
-- `initialBidCloseDate` (Date, standard baseline expiration)
-- `forcedBidCloseDate` (Date, absolute Hard Stop timer limit)
-- `triggerWindowMinutes` (Number, live extension activation threshold)
-- `extensionDurationMinutes` (Number, exact duration mathematical bump)
-- `startLocation` & `destinationLocation` (Embedded Objects for address arrays)
-- `consignmentDetails` (Embedded Object tracking: weight, dimensions, hazmat rules, commodity name)
+    USER {
+        ObjectId _id PK
+        String name
+        String email UK
+        String password "hashed"
+        Enum role "BUYER | SUPPLIER"
+    }
 
-### `Bid` Collection (Quotations)
-The competitive layer directly mapping Suppliers to RFQs.
-- `rfqId` (ObjectId ref Rfq)
-- `supplierId` (ObjectId ref User)
-- `supplierName` (String, cached label)
-- `carrierName` / `transitTime` / `validity` (Strings for logistics evaluation)
-- `freightCharges` / `originCharges` / `destinationCharges` (Numbers, independent billing blocks)
-- `totalAmount` (Number, math aggregate for sorting algorithms)
-- `rank` (String, `L1, L2, L3...` dynamic ladder generated on every request)
+    RFQ {
+        ObjectId _id PK
+        String rfqId UK
+        String name
+        Enum status "Active | Closed | Force Closed"
+        Date bidStartDate
+        Date currentBidCloseDate
+        Date initialBidCloseDate
+        Date forcedBidCloseDate
+        Date pickupDate
+        Number triggerWindowMinutes
+        Number extensionDurationMinutes
+        Object startLocation
+        Object destinationLocation
+        Object consignmentDetails
+        ObjectId buyerId FK
+        ObjectId awardedBidId FK "Nullable"
+    }
 
-### `ActivityLog` Collection (Events)
-The non-mutable ledger explicitly logging system mutations for transparent data tracking.
-- `rfqId` (ObjectId ref Rfq)
-- `type` (Enum: `['NEW_BID', 'STATUS_CHANGE', 'TIME_EXTENSION']`)
-- `message` (String, frontend visual representation)
-- `createdAt` (Timestamp)
+    BID {
+        ObjectId _id PK
+        ObjectId rfqId FK
+        ObjectId supplierId FK
+        String supplierName
+        String carrierName
+        Number freightCharges
+        Number originCharges
+        Number destinationCharges
+        Number totalAmount
+        String transitTime
+        String validity
+        String rank "cached"
+    }
+
+    ACTIVITY_LOG {
+        ObjectId _id PK
+        ObjectId rfqId FK
+        Enum type "NEW_BID | TIME_EXTENSION | STATUS_CHANGE | RFQ_CREATED"
+        String message
+        Date createdAt
+    }
+```
+
+---
+
+## 🔄 System Workflows & UML Sequence Diagrams
+
+### 1. Dynamic Bidding & Time Extension Workflow
+
+A fundamental mechanic of the British Auction system is dynamic time extensions. If a bid is placed near the closing time (within the `triggerWindowMinutes`), the auction deadline is automatically extended (by `extensionDurationMinutes`), ensuring suppliers always have a fair chance to counter-bid up until the absolute `forcedBidCloseDate`.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Supplier
+    participant Frontend (React)
+    participant Backend (Express)
+    participant Database (MongoDB)
+    participant Socket.io
+    actor Viewers (Other Suppliers/Buyer)
+
+    Supplier->>Frontend (React): Submits New Bid (Freight Details)
+    Frontend (React)->>Backend (Express): POST /api/bids { rfqId, charges... }
+    
+    Backend (Express)->>Database (MongoDB): Validate Supplier & RFQ State
+    Database (MongoDB)-->>Backend (Express): Return RFQ (Active status)
+    
+    Backend (Express)->>Backend (Express): Calculate totalAmount & Rank cache
+    Backend (Express)->>Database (MongoDB): Save new Bid
+    
+    alt is within Trigger Window? (e.g. < 10 mins left)
+        Backend (Express)->>Backend (Express): Calculate new Close Date (+5 mins)
+        alt new Close Date > Forced Close Date
+            Backend (Express)->>Database (MongoDB): Cap at Forced Close Date
+        else
+            Backend (Express)->>Database (MongoDB): Update currentBidCloseDate
+        end
+        Backend (Express)->>Database (MongoDB): Create ActivityLog (TIME_EXTENSION)
+        Backend (Express)->>Socket.io: Emit 'rfqUpdated' event
+        Backend (Express)->>Socket.io: Emit 'newLog' event
+    end
+    
+    Backend (Express)->>Database (MongoDB): Create ActivityLog (NEW_BID)
+    Backend (Express)->>Socket.io: Emit 'bidsUpdated' event
+    Backend (Express)->>Socket.io: Emit 'newLog' event
+    
+    Socket.io-->>Viewers (Other Suppliers/Buyer): Real-time Broadcast (Bids, Timers, Logs)
+    Backend (Express)-->>Frontend (React): 201 Created (Bid data)
+```
 
 ---
 
