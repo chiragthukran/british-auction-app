@@ -27,11 +27,33 @@ graph TD;
     classDef database fill:#8b5cf6,color:#fff,stroke-width:2px;
 ```
 
-### Core Architecture Subsystems
-1. **Frontend**: Vite-compiled React Application executing dynamic component renders. Styled with curated Vanilla CSS and smooth `framer-motion` layout animations. Modals natively handle user warnings, backed by `react-toastify` for absolute non-blocking WebSocket visual popups.
-2. **Backend**: Express container governing absolute schema logic, JWT validation, and heavy mathematical time-extension polling. Secure API Endpoints intercept structural updates through strict `protect` middleware logic.
-3. **Database Layer**: MongoDB cluster utilizing strict Mongoose typing, schema validation, and populated object references.
-4. **Real-time Pipeline**: Event-driven Socket.io state machine perfectly orchestrating live updates across decoupled React interfaces, mitigating standard HTTP polling drag.
+### Architectural Layers & Subsystems
+
+#### 1. Presentation Layer (Vite + React)
+The client-side interface is an immensely responsive Single Page Application (SPA).
+- **State Management:** Utilizes React's native Context API and hook-driven local state to manage complex auction forms, decoupled from backend latency.
+- **Routing & Fallbacks:** Driven by `react-router-dom`. In production, Vercel Edge rules transparently redirect deep links back to `index.html` to prevent 404s.
+- **UI & Animations:** Employs `framer-motion` for fluid modal popups and layout transitions. Real-time system notifications are cleanly handled non-intrusively via `react-toastify`.
+
+#### 2. API & Business Logic Layer (Node.js + Express)
+The synchronous backbone handling strict data validation and RESTful operations.
+- **Routing Controllers:** Segregated logic paths (`auth.js`, `bid.js`, `rfq.js`) ensuring single-responsibility handlers.
+- **Computation Engine:** Calculates bid rankings, dynamically extends auction deadlines based on temporal thresholds (`triggerWindowMinutes`), and processes financial freight aggregations on the fly.
+- **Error Handling:** Centralized Express middleware intercepts MongoDB validation failures and structural syntax errors, normalizing them into readable HTTP responses.
+
+#### 3. Real-Time Event Layer (Socket.io)
+The asynchronous pipeline completely eliminating standard HTTP polling drag.
+- **Bidirectional Duplex:** Maintains persistent TCP connections with active users.
+- **Event Broadcasting:** Instantly emits payload triggers like `newRfq`, `bidsUpdated`, and `newLog` the exact millisecond a database transaction commits, ensuring all observing suppliers and buyers see identical synchronized states.
+
+#### 4. Data Persistence Layer (MongoDB + Mongoose)
+A flexible but rigidly validated document-store architecture.
+- **Relational Integrity:** Implements normalized relationships using arrays of `ObjectId`s (e.g., embedding User IDs inside RFQs and Bids) mapping to strict Mongoose Schemas.
+- **Middleware Hooks:** Uses pre-save hooks (like `bcrypt.genSalt` for passwords) ensuring data mutations are sanitized *before* storage mapping.
+
+#### 5. Security & Authentication Layer
+- **Stateless Sessions (JWT):** All API payload requests are guarded by custom `protect` middleware that intercepts, decodes, and validates Bearer tokens on the Authorization header.
+- **Role-Based Access Control (RBAC):** API endpoints dynamically verify if the requesting Token belongs to a `BUYER` or a `SUPPLIER`, practically rejecting unauthorized mutations (e.g., a Buyer cannot place a Bid, a Supplier cannot create an RFQ).
 
 ---
 
